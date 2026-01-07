@@ -7,7 +7,7 @@ from aiogram.fsm.state import State, StatesGroup
 
 # === НАСТРОЙКИ ===
 API_TOKEN = '8509982026:AAGyK_tZ1duG7bQubQg7Os06Guoe1fAxy2A'
-ADMIN_ID = 6360408462  # Твой цифровой ID
+ADMIN_ID = 5694374929  # Твой цифровой ID
 ADMIN_LINK = "@Qumestlies"
 CARD_UAH = "5168 7520 2631 0196"
 
