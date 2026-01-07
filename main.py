@@ -7,7 +7,7 @@ from aiogram.fsm.state import State, StatesGroup
 
 # === НАСТРОЙКИ ===
 API_TOKEN = '8509982026:AAGyK_tZ1duG7bQubQg7Os06Guoe1fAxy2A'
-ADMIN_ID = 6360408462  # ВСТАВЬ СВОЙ ID СЮДА
+ADMIN_ID = 6360408462  # Твой цифровой ID
 ADMIN_LINK = "@Qumestlies"
 CARD_UAH = "5168 7520 2631 0196"
 
@@ -17,14 +17,13 @@ dp = Dispatcher()
 class Order(StatesGroup):
     waiting_for_nickname = State()
 
-# ПАКЕТЫ ТОВАРОВ
 PRICES = {
     "1000": {"name": "1000 руб. доната", "uah": "50", "stars": 20},
     "2000": {"name": "2000 руб. доната", "uah": "100", "stars": 40},
     "4250": {"name": "4250 руб. доната", "uah": "200", "stars": 70}
 }
 
-# === КЛАВИАТУРЫ ===
+# === ГЛАВНОЕ МЕНЮ ===
 def get_main_menu():
     buttons = [
         [InlineKeyboardButton(text="💎 1000 руб. доната", callback_data="order_1000")],
@@ -34,8 +33,6 @@ def get_main_menu():
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-# === ОБРАБОТЧИКИ ===
-
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
     await message.answer(
@@ -44,7 +41,7 @@ async def start_command(message: types.Message):
         reply_markup=get_main_menu()
     )
 
-# Обработка выбора товара
+# === ПРОЦЕСС ЗАКАЗА ===
 @dp.callback_query(F.data.startswith("order_"))
 async def process_order(callback: types.CallbackQuery, state: FSMContext):
     item_key = callback.data.split("_")[1]
@@ -53,7 +50,6 @@ async def process_order(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(Order.waiting_for_nickname)
     await callback.answer()
 
-# После ввода ника
 @dp.message(Order.waiting_for_nickname)
 async def get_nickname(message: types.Message, state: FSMContext):
     nickname = message.text
@@ -67,104 +63,100 @@ async def get_nickname(message: types.Message, state: FSMContext):
             f"Выберите способ оплаты:")
     
     buttons = [
-        [InlineKeyboardButton(text=f"⭐ Оплатить Звёздами ({item['stars']})", callback_data="pay_stars")],
-        [InlineKeyboardButton(text=f"💳 Оплатить на Карту ({item['uah']} грн)", callback_data="pay_card")]
+        [InlineKeyboardButton(text=f"⭐ Звёзды ({item['stars']})", callback_data="pay_stars")],
+        [InlineKeyboardButton(text=f"💳 Карта ({item['uah']} грн)", callback_data="pay_card")]
     ]
     await message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
 
-# Оплата Звёздами
+# === ОПЛАТА ЗВЕЗДАМИ ===
 @dp.callback_query(F.data == "pay_stars")
 async def pay_stars(callback: types.CallbackQuery, state: FSMContext):
-    user_data = await state.get_data()
-    item = PRICES[user_data['item_key']]
-    
+    data = await state.get_data()
+    item = PRICES[data['item_key']]
     await bot.send_invoice(
         chat_id=callback.message.chat.id,
         title=item['name'],
-        description=f"Ник: {user_data['nickname']}",
-        payload=f"{item['name']}|{user_data['nickname']}",
+        description=f"Ник: {data['nickname']}",
+        payload=f"{item['name']}|{data['nickname']}",
         provider_token="",
         currency="XTR",
         prices=[LabeledPrice(label="Звёзды", amount=int(item['stars']))]
     )
     await callback.answer()
 
-# Оплата Картой
-@dp.callback_query(F.data == "pay_card")
-async def pay_card(callback: types.CallbackQuery, state: FSMContext):
-    user_data = await state.get_data()
-    item = PRICES[user_data['item_key']]
-    text = (f"💳 **ОПЛАТА НА КАРТУ (ГРН)**\n\n"
-            f"💰 Сумма: `{item['uah']}` грн\n"
-            f"💳 Карта: `{CARD_UAH}`\n"
-            f"👤 Ник: `{user_data['nickname']}`\n\n"
-            f"⚠️ **ИНСТРУКЦИЯ:** Оплатите и отправьте **СКРИНШОТ** чека админу: {ADMIN_LINK}")
-    await callback.message.answer(text, parse_mode="Markdown")
-    await callback.answer()
-
-# Подтверждение транзакции (обязательно!)
 @dp.pre_checkout_query()
 async def pre_checkout(query: PreCheckoutQuery):
     await bot.answer_pre_checkout_query(query.id, ok=True)
 
-# Успешная оплата звёздами
 @dp.message(F.successful_payment)
 async def success_payment(message: types.Message):
     pay = message.successful_payment
-    product_name, nickname = pay.invoice_payload.split("|")
-    charge_id = pay.telegram_payment_charge_id # ID для возврата
+    product, nickname = pay.invoice_payload.split("|")
+    charge_id = pay.telegram_payment_charge_id
     
-    # Чек для пользователя
+    # ЧЕК ПОКУПАТЕЛЮ
     await message.answer(
-        f"🧾 **ВАШ ЧЕК ОБ ОПЛАТЕ**\n"
-        f"━━━━━━━━━━━━━━━\n"
-        f"💎 Товар: {product_name}\n"
-        f"⭐ Списано: {pay.total_amount} звёзд\n"
+        f"🧾 **ВАШ ЧЕК**\n━━━━━━━━━━━━━━━\n"
+        f"💎 Товар: {product}\n"
+        f"⭐ Сумма: {pay.total_amount}\n"
         f"👤 Ник: `{nickname}`\n"
         f"🆔 ID: `{charge_id}`\n"
-        f"━━━━━━━━━━━━━━━\n"
-        f"✅ Оплата подтверждена!", parse_mode="Markdown"
+        f"✅ Оплачено!", parse_mode="Markdown"
     )
 
-    # Уведомление админу
+    # УВЕДОМЛЕНИЕ АДМИНУ
     await bot.send_message(
         ADMIN_ID,
-        f"🔔 **НОВЫЙ ЗАКАЗ (ЗВЁЗДЫ)**\n"
-        f"👤 От: @{message.from_user.username}\n"
-        f"📦 Товар: {product_name}\n"
+        f"🔔 **НОВЫЙ ПЛАТЕЖ**\n"
+        f"📦 {product}\n"
         f"🎮 Ник: {nickname}\n"
-        f"💰 Сумма: {pay.total_amount} ⭐\n"
         f"🆔 ID для возврата: `{charge_id}`",
         parse_mode="Markdown"
     )
 
-# === КОМАНДА ВОЗВРАТА (ТОЛЬКО ДЛЯ АДМИНА) ===
+# === КОМАНДА ВОЗВРАТА ===
 @dp.message(Command("refund"))
 async def refund_stars(message: types.Message):
+    # Если пишет не админ - сообщаем об ошибке ID
     if message.from_user.id != ADMIN_ID:
+        await message.answer(f"🚫 Ошибка доступа!\nВаш ID: `{message.from_user.id}`\nВ коде прописан: `{ADMIN_ID}`")
         return
 
     args = message.text.split()
     if len(args) < 2:
-        await message.answer("⚠️ Введите ID транзакции. Пример: `/refund ID_ИЗ_ЧЕКА`", parse_mode="Markdown")
+        await message.answer("⚠️ Пиши так: `/refund [ID_ТРАНЗАКЦИИ]`")
         return
 
     charge_id = args[1]
     try:
-        # Для возврата нужен ID пользователя, которому возвращаем. 
-        # В этом простом коде возврат сработает, если вызовешь команду в ответ на чек или вставишь ID
-        await bot.refund_star_payment(user_id=message.from_user.id, telegram_payment_charge_id=charge_id)
-        await message.answer(f"✅ Возврат выполнен для ID: `{charge_id}`", parse_mode="Markdown")
+        await bot.refund_star_payment(
+            user_id=message.from_user.id, 
+            telegram_payment_charge_id=charge_id
+        )
+        await message.answer(f"✅ Возврат выполнен!\nID: `{charge_id}`")
     except Exception as e:
-        await message.answer(f"❌ Ошибка возврата: {e}")
+        await message.answer(f"❌ Ошибка Telegram:\n`{e}`")
+
+# === ОПЛАТА КАРТОЙ ===
+@dp.callback_query(F.data == "pay_card")
+async def pay_card(callback: types.CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    item = PRICES[data['item_key']]
+    await callback.message.answer(
+        f"💳 **ОПЛАТА ГРН**\n\n💰 `{item['uah']}` грн\n💳 `{CARD_UAH}`\n"
+        f"⚠️ Отправьте чек админу: {ADMIN_LINK}", parse_mode="Markdown"
+    )
+    await callback.answer()
 
 @dp.callback_query(F.data == "support")
 async def support(callback: types.CallbackQuery):
-    await callback.message.answer(f"🆘 Админ: {ADMIN_LINK}")
+    await callback.message.answer(f"🆘 Поддержка: {ADMIN_LINK}")
     await callback.answer()
 
 async def main():
+    print("--- БОТ ЗАПУЩЕН ---")
     await dp.start_polling(bot)
 
 if __name__ == '__main__':
     asyncio.run(main())
+    
