@@ -1,11 +1,11 @@
 import asyncio
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice, PreCheckoutQuery
 
 # === НАСТРОЙКИ ===
-API_TOKEN = '8509982026:AAGyK_tZ1duG7bQubQg7Os06Guoe1fAxy2A' # Вставь сюда токен!
-ADMIN_LINK = "@Qumestlies" # Замени на свой ник в Телеграм
+API_TOKEN = '8509982026:AAGyK_tZ1duG7bQubQg7Os06Guoe1fAxy2A'
+ADMIN_LINK = "@Qumestlies"
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
@@ -13,55 +13,52 @@ dp = Dispatcher()
 # === КЛАВИАТУРЫ ===
 def get_main_menu():
     buttons = [
-        [InlineKeyboardButton(text="⭐ 50 звёзд — 100 руб.", callback_data="buy_50_100")],
-        [InlineKeyboardButton(text="⭐ 100 звёзд — 200 руб.", callback_data="buy_100_200")],
-        [InlineKeyboardButton(text="⭐ 500 звёзд — 950 руб.", callback_data="buy_500_950")],
-        [InlineKeyboardButton(text="❓ Поддержка / Контакты", callback_data="support")]
+        [InlineKeyboardButton(text="💎 Купить 50 ⭐", callback_data="buy_50")],
+        [InlineKeyboardButton(text="💎 Купить 100 ⭐", callback_data="buy_100")],
+        [InlineKeyboardButton(text="💎 Купить 500 ⭐", callback_data="buy_500")],
+        [InlineKeyboardButton(text="❓ Поддержка", callback_data="support")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-def get_back_button():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="to_main")]
-    ])
-
-# === ОБРАБОТЧИКИ (ЛОГИКА) ===
+# === ОБРАБОТЧИКИ ===
 
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
     await message.answer(
         f"👋 Привет, {message.from_user.first_name}!\n\n"
-        "Это магазин звёзд. Выберите нужное количество ниже.\n"
-        "Оплата принимается в **рублях (RUB)**.",
-        reply_markup=get_main_menu(),
-        parse_mode="Markdown"
+        "Это официальный магазин звёзд. Выберите пакет ниже:",
+        reply_markup=get_main_menu()
     )
 
 @dp.callback_query(F.data.startswith("buy_"))
 async def process_buy(callback: types.CallbackQuery):
-    # Разбиваем данные из кнопки (например: buy_50_100)
-    data = callback.data.split("_")
-    stars = data[1]
-    price = data[2]
+    amount = int(callback.data.split("_")[1])
     
-    text = (
-        f"💎 **Заказ: {stars} звёзд**\n"
-        f"💰 **К оплате: {price} руб.**\n\n"
-        "💳 Для оплаты переведите сумму на карту или кошелёк:\n"
-        "`1234 5678 1234 5678` (Пример)\n\n"
-        "После оплаты пришлите скриншот чека админу: " + ADMIN_LINK
+    # Выставляем счет в Звездах (XTR)
+    await bot.send_invoice(
+        chat_id=callback.message.chat.id,
+        title=f"Покупка {amount} звёзд",
+        description=f"Оплата заказа на {amount} звёзд в Ares Arcane",
+        payload=f"stars_{amount}",
+        provider_token="", # Для звезд пусто
+        currency="XTR",
+        prices=[LabeledPrice(label="Звёзды", amount=amount)]
     )
-    
-    await callback.message.edit_text(text=text, reply_markup=get_back_button(), parse_mode="Markdown")
     await callback.answer()
 
-@dp.callback_query(F.data == "to_main")
-async def back_to_main(callback: types.CallbackQuery):
-    await callback.message.edit_text(
-        "Выберите количество звёзд для покупки:",
-        reply_markup=get_main_menu()
+# ОБЯЗАТЕЛЬНО: Подтверждение готовности принять платеж
+@dp.pre_checkout_query()
+async def process_pre_checkout_query(pre_checkout_query: PreCheckoutQuery):
+    await bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
+
+# Сообщение об успешной оплате
+@dp.message(F.successful_payment)
+async def success_payment(message: types.Message):
+    amount = message.successful_payment.total_amount
+    await message.answer(
+        f"✅ Оплата прошла успешно!\nВы купили {amount} звёзд.\n"
+        f"Если они не зачислились, пишите админу: {ADMIN_LINK}"
     )
-    await callback.answer()
 
 @dp.callback_query(F.data == "support")
 async def process_support(callback: types.CallbackQuery):
@@ -70,7 +67,7 @@ async def process_support(callback: types.CallbackQuery):
 
 # === ЗАПУСК ===
 async def main():
-    print("--- БОТ ЗАПУЩЕН (ВАЛЮТА: РУБЛИ) ---")
+    print("--- БОТ ЗАПУЩЕН (ОПЛАТА: ЗВЕЗДЫ) ---")
     await dp.start_polling(bot)
 
 if __name__ == '__main__':
