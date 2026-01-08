@@ -5,7 +5,7 @@ from aiogram.filters import Command
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice, PreCheckoutQuery
 
 # === НАСТРОЙКИ ===
-API_TOKEN = 'ВСТАВЬ_СВОЙ_ТОКЕН' 
+API_TOKEN = '8509982026:AAHnSThVeQKWR4Ux9o5t80J_2OCkZJ3fAGY' 
 ADMIN_ID = 5694374929 
 
 logging.basicConfig(level=logging.INFO)
