@@ -9,7 +9,6 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 
 # === НАСТРОЙКИ ===
-# УБЕДИСЬ, ЧТО ТУТ ТВОЙ ТОКЕН БЕЗ ЛИШНИХ ПРОБЕЛОВ!
 API_TOKEN = '8509982026:AAFhDIHzfISZZyFqZflCqObNLLhWh30xvpk' 
 ADMIN_ID = 5694374929 
 ADMIN_LINK = "@Qumestlies"
@@ -19,8 +18,9 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
+# --- ВЕБ-СЕРВЕР ДЛЯ ПОДДЕРЖКИ ЖИЗНИ (HEALTH CHECK) ---
 async def handle(request):
-    return web.Response(text="Bot is running!")
+    return web.Response(text="Bot is alive and running!")
 
 async def start_webserver():
     app = web.Application()
@@ -30,6 +30,7 @@ async def start_webserver():
     site = web.TCPSite(runner, '0.0.0.0', PORT)
     await site.start()
 
+# --- ЛОГИКА ---
 class Order(StatesGroup):
     waiting_for_nickname = State()
 
@@ -44,7 +45,9 @@ async def refund_handler(message: types.Message, state: FSMContext):
     if message.from_user.id != ADMIN_ID: return
     await state.clear()
     args = message.text.split()
-    if len(args) < 3: return
+    if len(args) < 3:
+        await message.answer("⚠️ Формат: `/refund [ID] [Чек]`")
+        return
     try:
         await bot.refund_star_payment(user_id=int(args[1]), telegram_payment_charge_id=args[2])
         await message.answer("✅ Возврат выполнен!")
@@ -55,40 +58,56 @@ async def refund_handler(message: types.Message, state: FSMContext):
 async def start_cmd(message: types.Message, state: FSMContext):
     await state.clear()
     btns = [[InlineKeyboardButton(text=f"💎 {v['name']}", callback_data=f"order_{k}")] for k, v in PRICES.items()]
-    await message.answer("👋 Выберите товар:", reply_markup=InlineKeyboardMarkup(inline_keyboard=btns))
+    await message.answer("👋 Выберите товар для оплаты звёздами:", reply_markup=InlineKeyboardMarkup(inline_keyboard=btns))
 
 @dp.callback_query(F.data.startswith("order_"))
 async def process_order(callback: types.CallbackQuery, state: FSMContext):
     await state.update_data(item_key=callback.data.split("_")[1])
-    await callback.message.answer("⌨️ Введите ваш НИК:")
+    await callback.message.answer("⌨️ Введите ваш НИК в игре:")
     await state.set_state(Order.waiting_for_nickname)
     await callback.answer()
 
-# ИСПРАВЛЕННАЯ ФУНКЦИЯ (проверяем, что пришел именно текст)
+# ИСПРАВЛЕННАЯ ФУНКЦИЯ: Проверка на пустой текст
 @dp.message(Order.waiting_for_nickname)
 async def get_nickname(message: types.Message, state: FSMContext):
-    # Если прислали не текст (стикер, фото и т.д.) - игнорируем
-    if not message.text:
-        await message.answer("❌ Пожалуйста, введите ник текстом!")
+    if not message.text: # Если прислали стикер/фото
+        await message.answer("❌ Ошибка: Введите ник ТЕКСТОМ.")
         return
         
     if message.text.startswith('/'): return
     
     data = await state.get_data()
-    item = PRICES.get(data.get('item_key'))
-    if not item: return
+    item_key = data.get('item_key')
+    item = PRICES.get(item_key)
+    
+    if not item:
+        await message.answer("❌ Сессия истекла. Нажмите /start")
+        await state.clear()
+        return
 
     await state.update_data(nickname=message.text)
     btns = [[InlineKeyboardButton(text="⭐ Оплатить Звёздами", callback_data="pay_stars")]]
-    await message.answer(f"🛒 Заказ: {item['name']}\n👤 Ник: `{message.text}`", reply_markup=InlineKeyboardMarkup(inline_keyboard=btns))
+    await message.answer(f"🛒 Заказ: {item['name']}\n👤 Ник: `{message.text}`", 
+                         reply_markup=InlineKeyboardMarkup(inline_keyboard=btns),
+                         parse_mode="Markdown")
 
 @dp.callback_query(F.data == "pay_stars")
 async def pay_stars(callback: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
     item = PRICES.get(data.get('item_key'))
-    if not item: return
+    if not item or not data.get('nickname'):
+        await callback.answer("❌ Ошибка данных. Попробуйте снова.")
+        return
     
-    await bot.send_invoice(callback.message.chat.id, title=item['name'], description=f"Ник: {data['nickname']}", payload="stars", provider_token="", currency="XTR", prices=[LabeledPrice(label="XTR", amount=item['stars'])])
+    await bot.send_invoice(
+        callback.message.chat.id, 
+        title=item['name'], 
+        description=f"Ник: {data['nickname']}", 
+        payload="stars", 
+        provider_token="", 
+        currency="XTR", 
+        prices=[LabeledPrice(label="XTR", amount=item['stars'])]
+    )
     await callback.answer()
 
 @dp.pre_checkout_query()
@@ -100,9 +119,11 @@ async def success_payment(message: types.Message, state: FSMContext):
     await state.clear()
     tid = message.successful_payment.telegram_payment_charge_id
     uid = message.from_user.id
-    await bot.send_message(ADMIN_ID, f"🔔 ОПЛАТА!\nЮзер: `{uid}`\nЧек: `{tid}`\n\n`/refund {uid} {tid}`", parse_mode="Markdown")
+    await bot.send_message(ADMIN_ID, f"🔔 ОПЛАТА!\nЮзер: `{uid}`\nЧек: `{tid}`\n\nДля возврата:\n`/refund {uid} {tid}`", parse_mode="Markdown")
 
+# --- ЗАПУСК ---
 async def main():
+    # Запускаем и веб-сервер, и бота
     await asyncio.gather(start_webserver(), dp.start_polling(bot))
 
 if __name__ == '__main__':
