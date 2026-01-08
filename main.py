@@ -7,7 +7,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 # === НАСТРОЙКИ (ОБЯЗАТЕЛЬНО ПРОВЕРЬ ТОКЕН) ===
-API_TOKEN = 'ТВОЙ_ТОКЕН_ЗДЕСЬ' 
+API_TOKEN = '8509982026:AAHnSThVeQKWR4Ux9o5t80J_2OCkZJ3fAGY' 
 ADMIN_ID = 5694374929 
 ADMIN_LINK = "@Qumestlies"
 CARD_UAH = "5168 7520 2631 0196"
