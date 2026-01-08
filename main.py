@@ -9,7 +9,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 
 # === НАСТРОЙКИ (ПРОВЕРЬ ТОКЕН!) ===
-API_TOKEN = 'ВСТАВЬ_СВОЙ_ТОКЕН_ТУТ' 
+API_TOKEN = '8509982026:AAFXETiJ3R3f0PLSoYRMXYVm5bCyB6MhDT8' 
 ADMIN_ID = 5694374929 
 ADMIN_LINK = "@Qumestlies"
 PORT = 8080 
