@@ -9,7 +9,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 
 # === НАСТРОЙКИ ===
-API_TOKEN = 'ВСТАВЬ_СВОЙ_ТОКЕН_БОТА' # Твой токен от BotFather
+API_TOKEN = '8509982026:AAFhDIHzfISZZyFqZflCqObNLLhWh30xvpk' # Твой токен от BotFather
 ADMIN_ID = 5694374929 # Твой ID
 PORT = 8080 
 
