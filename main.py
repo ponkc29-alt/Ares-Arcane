@@ -2,8 +2,9 @@ import telebot
 from telebot import types
 from flask import Flask
 import threading
+import os
 
-# --- ТВОИ ДАННЫЕ ---
+# --- НАСТРОЙКИ ---
 API_TOKEN = '8509982026:AAFhDIHzfISZZyFqZflCqObNLLhWh30xvpk' 
 ADMIN_ID = 5694374929
 MY_CARD_NUMBER = "5168 7520 2631 0196"
@@ -13,41 +14,54 @@ bot = telebot.TeleBot(API_TOKEN)
 
 @app.route('/')
 def home():
-    return "Bot is alive!"
+    return "Бот работает!"
 
 def run_flask():
-    app.run(host='0.0.0.0', port=8080)
+    # Koyeb сам подставит нужный порт, если нет - будет 8080
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
 
-# --- ГЛАВНАЯ ЛОГИКА ---
+# --- ЛОГИКА ВЫБОРА ТОВАРОВ ---
 
 @bot.message_handler(commands=['start'])
 def start(message):
-    # Если пишет админ (ТЫ), бот подтверждает работоспособность
     if message.from_user.id == ADMIN_ID:
         bot.set_my_commands([
-            types.BotCommand("start", "Запустить бота"),
-            types.BotCommand("refund", "Возврат (ID_ТГ ID_ТРАНЗ)")
+            types.BotCommand("start", "Запустить"),
+            types.BotCommand("refund", "Возврат (ID Транзакция)")
         ])
-        bot.send_message(ADMIN_ID, "🛡️ Система обновлена. Функция /refund активна и будет работать всегда.")
+        bot.send_message(ADMIN_ID, "🛡️ Система обновлена. Все 8 тарифов активны.")
     
-    bot.send_message(message.chat.id, "👋 Привет! Введи свой ник в игре для покупки:")
+    bot.send_message(message.chat.id, "👋 Привет! Введи свой ник в игре:")
     bot.register_next_step_handler(message, get_nickname)
 
 def get_nickname(message):
     nickname = message.text
     if not nickname: return
     
-    markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("50 ⭐ — 100 руб.", callback_data=f"buy_50_{nickname}"))
-    markup.add(types.InlineKeyboardButton("100 ⭐ — 200 руб.", callback_data=f"buy_100_{nickname}"))
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    # Список всех твоих тарифов
+    rates = [
+        ("25 ⭐ — 1000 доната", "25"),
+        ("50 ⭐ — 2000 доната", "50"),
+        ("100 ⭐ — 2500 доната", "100"),
+        ("200 ⭐ — 3500 доната", "200"),
+        ("300 ⭐ — 5500 доната", "300"),
+        ("400 ⭐ — 11500 доната", "400"),
+        ("500 ⭐ — 16000 доната", "500"),
+        ("1000 ⭐ — 20000 доната", "1000")
+    ]
     
-    bot.send_message(message.chat.id, f"🎮 Ник: {nickname}\nВыберите количество Звезд:", reply_markup=markup)
+    for text, val in rates:
+        markup.add(types.InlineKeyboardButton(text, callback_data=f"buy_{val}_{nickname}"))
+    
+    bot.send_message(message.chat.id, f"🎮 Ник: {nickname}\nВыбери количество звёзд:", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('buy_'))
 def choose_pay(call):
     _, amount, nickname = call.data.split('_')
     markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("Звезды (Авто)", callback_data=f"stars_{amount}_{nickname}"))
+    markup.add(types.InlineKeyboardButton("Звёзды (Авто)", callback_data=f"stars_{amount}_{nickname}"))
     markup.add(types.InlineKeyboardButton("Карта (Вручную)", callback_data=f"card_{amount}_{nickname}"))
     bot.edit_message_text(f"Ник: {nickname} | Сумма: {amount} ⭐\nВыбери способ оплаты:", 
                           call.message.chat.id, call.message.message_id, reply_markup=markup)
@@ -57,55 +71,47 @@ def pay_stars(call):
     _, amount, nickname = call.data.split('_')
     bot.send_invoice(
         call.message.chat.id,
-        title=f"Донат {amount} ⭐",
-        description=f"Ник: {nickname}",
+        title=f"Покупка {amount} ⭐",
+        description=f"Донат для игрока: {nickname}",
         provider_token="", currency="XTR",
-        prices=[types.LabeledPrice(label="Звезды", amount=int(amount))],
+        prices=[types.LabeledPrice(label="Звёзды", amount=int(amount))],
         invoice_payload=f"{nickname}:{call.from_user.id}"
     )
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('card_'))
 def pay_card(call):
-    bot.send_message(call.message.chat.id, f"💳 Переведите сумму на карту:\n`{MY_CARD_NUMBER}`\n\nПосле оплаты пришлите чек.")
+    bot.send_message(call.message.chat.id, f"💳 Переведите оплату на карту:\n`{MY_CARD_NUMBER}`\n\nПосле оплаты скиньте чек админу.")
+    bot.send_message(ADMIN_ID, f"📢 Кто-то хочет оплатить на карту! Ник в игре: `{call.data.split('_')[2]}`")
 
 @bot.pre_checkout_query_handler(func=lambda query: True)
 def checkout(pre_checkout_query):
     bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
 
-# --- УВЕДОМЛЕНИЯ ---
+# --- УВЕДОМЛЕНИЯ И ВОЗВРАТ ---
 
 @bot.message_handler(content_types=['successful_payment'])
 def success(message):
     p = message.successful_payment
     data = p.invoice_payload.split(':')
-    # Бот присылает тебе данные, а ты сам вводишь /refund
     report = (
-        f"✅ Оплата прошла!\n"
+        f"✅ ОПЛАТА ЗВЁЗДАМИ!\n"
         f"Ник: `{data[0]}`\n"
         f"ID игрока: `{data[1]}`\n"
-        f"ID транзакции: `{p.telegram_payment_charge_id}`"
+        f"Транзакция: `{p.telegram_payment_charge_id}`\n\n"
+        f"Для возврата введи:\n`/refund {data[1]} {p.telegram_payment_charge_id}`"
     )
     bot.send_message(ADMIN_ID, report, parse_mode='Markdown')
-
-# --- ВЕЧНАЯ КОМАНДА REFUND (ТЫ ВВОДИШЬ ЕЁ САМ) ---
 
 @bot.message_handler(commands=['refund'])
 def make_refund(message):
     if message.from_user.id != ADMIN_ID: return
-
     args = message.text.split()
-    # Проверка: ввел ли ты ID человека и ID транзакции
     if len(args) < 3:
-        bot.reply_to(message, "❌ Введи: /refund [ID_ЧЕЛОВЕКА] [ID_ТРАНЗАКЦИИ]")
+        bot.reply_to(message, "❌ Формат: /refund [ID_ИГРОКА] [ID_ТРАНЗАКЦИИ]")
         return
-
     try:
-        user_id = int(args[1])
-        charge_id = args[2]
-        
-        # Сам процесс возврата
-        bot.refund_star_payment(user_id=user_id, telegram_payment_charge_id=charge_id)
-        bot.reply_to(message, f"✅ Возврат для {user_id} выполнен! Команда готова к следующему возврату.")
+        bot.refund_star_payment(user_id=int(args[1]), telegram_payment_charge_id=args[2])
+        bot.reply_to(message, "✅ Возврат выполнен! Команда готова к работе снова.")
     except Exception as e:
         bot.reply_to(message, f"❌ Ошибка: {e}")
 
