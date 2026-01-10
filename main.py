@@ -1,90 +1,115 @@
-import asyncio
-import logging
-from aiohttp import web
-from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import Command
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice, PreCheckoutQuery
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.fsm.storage.memory import MemoryStorage
+import telebot
+from telebot import types
+from flask import Flask
+import threading
 
-# === НАСТРОЙКИ ===
-API_TOKEN = '8509982026:AAFhDIHzfISZZyFqZflCqObNLLhWh30xvpk' # Твой токен от BotFather
-ADMIN_ID = 5694374929 # Твой ID
-PORT = 8080 
+# --- ТВОИ ДАННЫЕ ---
+API_TOKEN = 'ТВОЙ_ТОКЕН_БОТА' 
+ADMIN_ID = 5694374929
+MY_CARD_NUMBER = "5168 7520 2631 0196"
 
-logging.basicConfig(level=logging.INFO)
-bot = Bot(token=API_TOKEN)
-dp = Dispatcher(storage=MemoryStorage())
+app = Flask(__name__)
+bot = telebot.TeleBot(API_TOKEN)
 
-# --- ВЕБ-СЕРВЕР ДЛЯ ПОДДЕРЖКИ ЖИЗНИ (ЧТОБЫ НЕ ЗАСЫПАЛ) ---
-async def handle(request):
-    return web.Response(text="Bot is Alive!")
+@app.route('/')
+def home():
+    return "Bot is alive!"
 
-async def start_webserver():
-    app = web.Application()
-    app.router.add_get('/', handle)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', PORT)
-    await site.start()
+def run_flask():
+    app.run(host='0.0.0.0', port=8080)
 
-# --- ЛОГИКА БОТА ---
-class Order(StatesGroup):
-    waiting_for_nickname = State()
+# --- ГЛАВНАЯ ЛОГИКА ---
 
-PRICES = {
-    "1000": {"name": "1000 руб. доната", "stars": 20, "amount": 1000},
-    "2000": {"name": "2000 руб. доната", "stars": 40, "amount": 2000},
-    "4250": {"name": "4250 руб. доната", "stars": 70, "amount": 4250}
-}
+@bot.message_handler(commands=['start'])
+def start(message):
+    # Если пишет админ (ТЫ), бот подтверждает работоспособность
+    if message.from_user.id == ADMIN_ID:
+        bot.set_my_commands([
+            types.BotCommand("start", "Запустить бота"),
+            types.BotCommand("refund", "Возврат (ID_ТГ ID_ТРАНЗ)")
+        ])
+        bot.send_message(ADMIN_ID, "🛡️ Система обновлена. Функция /refund активна и будет работать всегда.")
+    
+    bot.send_message(message.chat.id, "👋 Привет! Введи свой ник в игре для покупки:")
+    bot.register_next_step_handler(message, get_nickname)
 
-@dp.message(Command("start"))
-async def start_cmd(message: types.Message, state: FSMContext):
-    await state.clear()
-    btns = [[InlineKeyboardButton(text=f"💎 {v['name']} — ⭐{v['stars']}", callback_data=f"order_{k}")] for k, v in PRICES.items()]
-    await message.answer("👋 Бот активен! Выберите сумму пополнения:", reply_markup=InlineKeyboardMarkup(inline_keyboard=btns))
+def get_nickname(message):
+    nickname = message.text
+    if not nickname: return
+    
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("50 ⭐ — 100 руб.", callback_data=f"buy_50_{nickname}"))
+    markup.add(types.InlineKeyboardButton("100 ⭐ — 200 руб.", callback_data=f"buy_100_{nickname}"))
+    
+    bot.send_message(message.chat.id, f"🎮 Ник: {nickname}\nВыберите количество Звезд:", reply_markup=markup)
 
-@dp.callback_query(F.data.startswith("order_"))
-async def process_order(callback: types.CallbackQuery, state: FSMContext):
-    await state.update_data(item_key=callback.data.split("_")[1])
-    await callback.message.answer("⌨️ Введите ваш НИК в SAMP:")
-    await state.set_state(Order.waiting_for_nickname)
-    await callback.answer()
+@bot.callback_query_handler(func=lambda call: call.data.startswith('buy_'))
+def choose_pay(call):
+    _, amount, nickname = call.data.split('_')
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("Звезды (Авто)", callback_data=f"stars_{amount}_{nickname}"))
+    markup.add(types.InlineKeyboardButton("Карта (Вручную)", callback_data=f"card_{amount}_{nickname}"))
+    bot.edit_message_text(f"Ник: {nickname} | Сумма: {amount} ⭐\nВыбери способ оплаты:", 
+                          call.message.chat.id, call.message.message_id, reply_markup=markup)
 
-@dp.message(Order.waiting_for_nickname)
-async def get_nickname(message: types.Message, state: FSMContext):
-    await state.update_data(nickname=message.text)
-    data = await state.get_data()
-    item = PRICES[data['item_key']]
-    btn = [[InlineKeyboardButton(text="⭐ Оплатить Звёздами", callback_data="pay")]]
-    await message.answer(f"🛒 Заказ: {item['name']}\n👤 Ник: {message.text}", reply_markup=InlineKeyboardMarkup(inline_keyboard=btn))
+@bot.callback_query_handler(func=lambda call: call.data.startswith('stars_'))
+def pay_stars(call):
+    _, amount, nickname = call.data.split('_')
+    bot.send_invoice(
+        call.message.chat.id,
+        title=f"Донат {amount} ⭐",
+        description=f"Ник: {nickname}",
+        provider_token="", currency="XTR",
+        prices=[types.LabeledPrice(label="Звезды", amount=int(amount))],
+        invoice_payload=f"{nickname}:{call.from_user.id}"
+    )
 
-@dp.callback_query(F.data == "pay")
-async def pay(callback: types.CallbackQuery, state: FSMContext):
-    data = await state.get_data()
-    item = PRICES[data['item_key']]
-    await bot.send_invoice(callback.message.chat.id, title=item['name'], description=f"Ник: {data['nickname']}", payload="stars", provider_token="", currency="XTR", prices=[LabeledPrice(label="XTR", amount=item['stars'])])
-    await callback.answer()
+@bot.callback_query_handler(func=lambda call: call.data.startswith('card_'))
+def pay_card(call):
+    bot.send_message(call.message.chat.id, f"💳 Переведите сумму на карту:\n`{MY_CARD_NUMBER}`\n\nПосле оплаты пришлите чек.")
 
-@dp.pre_checkout_query()
-async def pre_checkout(query: PreCheckoutQuery):
-    await bot.answer_pre_checkout_query(query.id, ok=True)
+@bot.pre_checkout_query_handler(func=lambda query: True)
+def checkout(pre_checkout_query):
+    bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
 
-@dp.message(F.successful_payment)
-async def success_payment(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    nick = data.get('nickname')
-    amt = PRICES[data['item_key']]['amount']
-    # Сообщение ТЕБЕ в личку
-    await bot.send_message(ADMIN_ID, f"🔔 ОПЛАТА!\n👤 Ник: {nick}\n💰 Сумма: {amt} руб.\n\n✅ Оплата прошла. Выдай донат вручную!")
-    # Сообщение ИГРОКУ
-    await message.answer(f"🎉 Спасибо! Донат на ник {nick} будет зачислен в ближайшее время.")
-    await state.clear()
+# --- УВЕДОМЛЕНИЯ ---
 
-async def main():
-    await asyncio.gather(start_webserver(), dp.start_polling(bot))
+@bot.message_handler(content_types=['successful_payment'])
+def success(message):
+    p = message.successful_payment
+    data = p.invoice_payload.split(':')
+    # Бот присылает тебе данные, а ты сам вводишь /refund
+    report = (
+        f"✅ Оплата прошла!\n"
+        f"Ник: `{data[0]}`\n"
+        f"ID игрока: `{data[1]}`\n"
+        f"ID транзакции: `{p.telegram_payment_charge_id}`"
+    )
+    bot.send_message(ADMIN_ID, report, parse_mode='Markdown')
+
+# --- ВЕЧНАЯ КОМАНДА REFUND (ТЫ ВВОДИШЬ ЕЁ САМ) ---
+
+@bot.message_handler(commands=['refund'])
+def make_refund(message):
+    if message.from_user.id != ADMIN_ID: return
+
+    args = message.text.split()
+    # Проверка: ввел ли ты ID человека и ID транзакции
+    if len(args) < 3:
+        bot.reply_to(message, "❌ Введи: /refund [ID_ЧЕЛОВЕКА] [ID_ТРАНЗАКЦИИ]")
+        return
+
+    try:
+        user_id = int(args[1])
+        charge_id = args[2]
+        
+        # Сам процесс возврата
+        bot.refund_star_payment(user_id=user_id, telegram_payment_charge_id=charge_id)
+        bot.reply_to(message, f"✅ Возврат для {user_id} выполнен! Команда готова к следующему возврату.")
+    except Exception as e:
+        bot.reply_to(message, f"❌ Ошибка: {e}")
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    threading.Thread(target=run_flask).start()
+    bot.polling(none_stop=True)
     
