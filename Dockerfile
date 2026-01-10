@@ -1,6 +1,15 @@
 FROM python:3.10-slim
+
 WORKDIR /app
+
+# Копируем файлы
 COPY . .
-RUN pip install aiogram
-# Эта магия запустит бота и одновременно откроет порт 8000, чтобы Koyeb был доволен
-CMD python main.py & python -m http.server 8000
+
+# Устанавливаем нужные библиотеки (telebot и flask)
+RUN pip install pyTelegramBotAPI flask
+
+# Открываем порт 8080 для Koyeb
+EXPOSE 8080
+
+# Запускаем нашего бота
+CMD ["python", "main.py"]
