@@ -4,7 +4,7 @@ from flask import Flask
 import threading
 
 # --- ТВОИ ДАННЫЕ ---
-API_TOKEN = 'ТВОЙ_ТОКЕН_БОТА' 
+API_TOKEN = '8509982026:AAFhDIHzfISZZyFqZflCqObNLLhWh30xvpk' 
 ADMIN_ID = 5694374929
 MY_CARD_NUMBER = "5168 7520 2631 0196"
 
