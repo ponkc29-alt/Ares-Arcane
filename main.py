@@ -14,13 +14,13 @@ bot = telebot.TeleBot(API_TOKEN)
 
 @app.route('/')
 def home():
-    return "Бот активен и работает на Render!"
+    return "Бот работает!"
 
 def run_flask():
-    port = int(os.environ.get("PORT", 8000))
+    port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
-# --- ЛОГИКА МАГАЗИНА ---
+# --- ЛОГИКА (ТВОЯ РОДНАЯ) ---
 
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -51,28 +51,17 @@ def choose_pay(call):
     bot.edit_message_text(f"Ник: {nickname} | Сумма: {amount} ⭐\nСпособ оплаты:", 
                           call.message.chat.id, call.message.message_id, reply_markup=markup)
 
-# Оплата звёздами
 @bot.callback_query_handler(func=lambda call: call.data.startswith('stars_'))
 def pay_stars(call):
     _, amount, nickname = call.data.split('_')
     bot.send_invoice(
         call.message.chat.id,
         title=f"Донат {amount} ⭐",
-        description=f"Ник в игре: {nickname}",
-        provider_token="", 
-        currency="XTR",
+        description=f"Ник: {nickname}",
+        provider_token="", currency="XTR",
         prices=[types.LabeledPrice(label="Звёзды", amount=int(amount))],
         invoice_payload=f"{nickname}:{call.from_user.id}"
     )
-
-# Оплата картой (просто инфо)
-@bot.callback_query_handler(func=lambda call: call.data.startswith('card_'))
-def pay_card(call):
-    _, amount, nickname = call.data.split('_')
-    msg = f"💳 Для оплаты картой переведите сумму на:\n`{MY_CARD_NUMBER}`\n\nПосле оплаты скиньте чек админу."
-    bot.send_message(call.message.chat.id, msg, parse_mode="Markdown")
-
-# --- СИСТЕМА ПЛАТЕЖЕЙ И ВОЗВРАТОВ ---
 
 @bot.pre_checkout_query_handler(func=lambda query: True)
 def checkout(pre_checkout_query):
@@ -81,34 +70,21 @@ def checkout(pre_checkout_query):
 @bot.message_handler(content_types=['successful_payment'])
 def success(message):
     p = message.successful_payment
-    nickname = p.invoice_payload.split(':')[0]
-    charge_id = p.telegram_payment_charge_id
-    
-    # Уведомление пользователю
-    bot.send_message(message.chat.id, f"✅ Оплата прошла! Ник {nickname} получит донат.")
-    
-    # Уведомление тебе (Админу) с ID для возврата
-    bot.send_message(ADMIN_ID, f"💰 КАССА ЗВЁЗД!\n👤 Ник: {nickname}\n💎 Сумма: {p.total_amount} ⭐\n🆔 ID Транзакции: `{charge_id}`")
+    # Сообщение админу со всеми данными
+    bot.send_message(ADMIN_ID, f"💰 ОПЛАТА! \nНик: {p.invoice_payload.split(':')[0]}\nСумма: {p.total_amount} ⭐\nID транзакции: `{p.telegram_payment_charge_id}`")
 
-# КОМАНДА ДЛЯ ВОЗВРАТА (РЕФУНД)
+# --- ВОЗВРАТ (ПРОСТОЙ) ---
 @bot.message_handler(commands=['refund'])
 def make_refund(message):
     if message.from_user.id != ADMIN_ID: return
     try:
-        args = message.text.split()
-        if len(args) < 2:
-            bot.reply_to(message, "Используй: /refund ID_ТРАНЗАКЦИИ")
-            return
-        
-        charge_id = args[1]
-        # Делаем возврат (только для твоего ID как получателя)
+        # Теперь просто: /refund КОД_ТРАНЗАКЦИИ
+        charge_id = message.text.split()[1]
         bot.refund_star_payment(ADMIN_ID, charge_id)
-        bot.reply_to(message, "✅ Звёзды успешно возвращены пользователю!")
+        bot.reply_to(message, "✅ Звезды возвращены!")
     except Exception as e:
-        bot.reply_to(message, f"❌ Ошибка возврата: {e}")
+        bot.reply_to(message, f"❌ Ошибка: {e}")
 
-# --- ЗАПУСК ---
 if __name__ == '__main__':
     threading.Thread(target=run_flask, daemon=True).start()
-    print("Бот запущен...")
-    bot.infinity_polling(timeout=20, skip_pending=True)
+    bot.infinity_polling(none_stop=True, skip_pending=True)
