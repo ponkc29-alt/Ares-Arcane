@@ -5,7 +5,7 @@ import threading
 import os
 
 # --- НАСТРОЙКИ ---
-API_TOKEN = '8327010108:AAENxm2rbgw6oUps1rfx5paXJ0AMJtE3wXY' 
+API_TOKEN = '8327010108:AAEbegVfKts9AxEKPlkvfYwozklR9bylyno' 
 ADMIN_ID = 5694374929
 MY_CARD_NUMBER = "5168 7520 2631 0196"
 
