@@ -112,4 +112,3 @@ if __name__ == '__main__':
     threading.Thread(target=run_flask, daemon=True).start()
     print("Бот запущен...")
     bot.infinity_polling(timeout=20, skip_pending=True)
-    
